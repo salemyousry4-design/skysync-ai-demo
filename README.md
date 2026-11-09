@@ -1,71 +1,87 @@
-# Sky Sync AI — Fleet Readiness System (Frontend Demo)
+# Sky Sync AI — Fleet Readiness System (Demo)
 
-A real-time maintenance and readiness system for a helicopter fleet. It runs **fully offline** on a local network, with a live dashboard for commanders, workflows for the control tower, engineers and pilots, and an AI maintenance assistant.
+![tests](https://github.com/salemyousry4-design/skysync-ai-demo/actions/workflows/tests.yml/badge.svg)
 
-This repository contains the **frontend only**, packaged as a clickable demo with fictional sample data.
-The production backend is private and **not** included.
+A real-time maintenance and readiness system for a helicopter fleet. It runs **fully offline** on a local network and gives commanders a live readiness dashboard, while the control tower, engineers and pilots each get their own workflow. An AI maintenance assistant answers questions from the maintenance library and live fleet data.
+
+This repository is a **public demo**: the production screens plus a **Python engine** that reproduces the system's business rules, using fictional data.
+The production backend is private and **not** included here.
 
 ![Command Dashboard](docs/screenshots/command-dashboard.png)
 
-## ▶️ Try it
+## ▶️ Run it
 
-**Live demo:** _coming soon (GitHub Pages)_
-
-Or run it locally with no installs and no build step:
+**Option 1: Python server (standard library only, nothing to install)**
 
 ```bash
 git clone https://github.com/salemyousry4-design/skysync-ai-demo.git
 cd skysync-ai-demo
-python -m http.server 8000
+python server.py
 # open http://localhost:8000
 ```
 
-On the sign-in screen, pick a role (or sign in with any demo username and the password `demo`).
-**Tip:** open two roles in two browser tabs, for example *Tower* and *Commander*. Clear a takeoff in one tab and watch the other one update live.
+Every browser and device on your Wi-Fi shares the same fleet. Try the **Tower** on a phone and the **Commander** on a laptop.
+
+**Option 2: in the browser (GitHub Pages)**
+
+The same Python code runs inside the browser with [Pyodide](https://pyodide.org). No server is needed, and each visitor gets their own copy of the data.
+
+On the sign-in screen, pick a role (or use any demo username with the password `demo`).
 
 ## 👥 One system, six roles
 
 | Role | What they do |
 |---|---|
 | **Commander** | Fleet readiness at a glance: mission-ready %, health trend, predictive alerts |
-| **Tower Operator** | Clear takeoffs and record landings (overdue aircraft are blocked automatically) |
-| **Maintenance Engineer** | Open work orders, record the work that was done |
-| **Chief Engineer** | Review completed work and certify aircraft airworthy, or send it back for rework |
-| **Pilot** | Pre-flight briefing for any aircraft, report defects after landing |
-| **System Administrator** | Users and roles, 2FA, account lockout, security log, append-only activity log |
+| **Tower Operator** | Clears takeoffs and records landings. Overdue aircraft are blocked automatically |
+| **Maintenance Engineer** | Opens work orders and records the work done |
+| **Chief Engineer** | Certifies aircraft airworthy, or sends the work back for rework |
+| **Pilot** | Gets a pre-flight briefing and reports defects after landing |
+| **System Administrator** | Manages users and roles, 2FA, account lockout, the security log and the append-only activity log |
+
+## 🐍 The Python engine: `skysync_demo/`
+
+| Module | What it does |
+|---|---|
+| [`rules.py`](skysync_demo/rules.py) | **Explainable health score** (0–100 with reasons), the 50-hour / 30-day overdue rule, status derived from work orders, predictive insight |
+| [`api.py`](skysync_demo/api.py) | Every `/api/...` endpoint as a small function registered with `@route`, with role checks on each one |
+| [`permissions.py`](skysync_demo/permissions.py) | Role-based access control and the password policy |
+| [`reports.py`](skysync_demo/reports.py) | Availability, sorties, flight hours, turnaround time, CSV export |
+| [`assistant.py`](skysync_demo/assistant.py) | Answers only from known sources, always cites them and never guesses |
+| [`seed.py`](skysync_demo/seed.py) | The fictional starting fleet (reproducible) |
+| [`server.py`](server.py) | HTTP server built on `http.server` |
+
+**Tests:** `pytest -q` runs 55 tests covering the rules, permissions and full maintenance cycles (open → complete → certify, reject → rework). They run automatically on every push.
+
+```text
+Browser screens (HTML/CSS/JS)
+        │  /api/...
+        ▼
+demo.js ──► python server.py ──► skysync_demo.api   (local)
+        └─► Pyodide (Python in the browser) ──► skysync_demo.api   (GitHub Pages)
+```
 
 ## ✨ Highlights
 
-- **Live sync across stations.** Every screen updates the moment someone acts (WebSocket in production).
-- **Explainable health score.** Every aircraft gets a 0–100 score with the reasons behind it, not just a number.
-- **Safety rules enforced by the system.** An overdue aircraft can't be cleared for takeoff, and an aircraft only returns to service after a chief engineer signs it off.
-- **AI maintenance assistant.** Answers from the maintenance library and live fleet data, and always cites its sources.
-- **Role-based access control.** Each role sees its own screens, and buttons it can't use are disabled.
-- **Audit trail.** Every action is logged with who did it and when, and can be exported to CSV.
-- **Works on desktop, iPad and phone.** Installable as a home-screen app.
-- **Zero dependencies.** Plain HTML, CSS and JavaScript with no frameworks, CDNs or web fonts. It was designed for networks with no internet access.
+- **Safety rules enforced by the system**: an overdue aircraft can't be cleared for takeoff, and only a chief engineer can return an aircraft to service.
+- **Single source of truth**: aircraft status is never typed in by hand; it's derived from the work orders.
+- **Live sync across stations**: production uses WebSocket; the demo uses cross-tab messaging plus a change counter.
+- **Audit trail**: every action records who did it and when, and can be exported to CSV.
+- **Works on desktop, iPad and phone**: the frontend is plain HTML/CSS/JS with no frameworks or CDNs, because it was designed for networks with no internet access.
 
 | | |
 |---|---|
 | ![Control Tower](docs/screenshots/control-tower.png) | ![AI Assistant](docs/screenshots/ai-assistant.png) |
 | ![Reports](docs/screenshots/reports.png) | ![Control Center](docs/screenshots/control-center.png) |
 
-## 🧩 How the demo works
-
-The screens are exactly the ones used in production. They call the same `/api/...` endpoints as before.
-In this repo, [`demo.js`](demo.js) stands in for the server: it intercepts those requests and answers them from sample data stored in your browser (`localStorage`). It follows the same business rules as the real backend: status transitions, health scoring and permissions.
-Use **Reset demo** at the top of any screen to start over.
-
-The AI assistant in this demo returns pre-written answers. The real system runs a local LLM with retrieval over the maintenance library, fully offline.
-
-## 🏗️ Production architecture (not in this repo)
+## 🏗️ Production stack (private)
 
 `Python · FastAPI · SQLite · WebSocket · TOTP two-factor auth · RBAC · local LLM (Ollama) + RAG · Docker`
 
 ## ⚠️ Notes
 
-- All aircraft, people and records are **fictional**. Tail numbers such as `SK-101` are made up.
-- This demo is for showcasing the UI. It is not a certified maintenance tool, and its answers are not technical guidance.
+- All aircraft, people and records are **fictional**; tail numbers such as `SK-101` are made up.
+- This is a showcase, not a certified maintenance tool, and its answers are not technical guidance.
 
 ---
 
