@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Activity Log — Sky Sync AI</title>
+<link rel="stylesheet" href="style.css">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="brand/logo.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="brand/logo.svg">
+<meta name="theme-color" content="#071226">
+</head>
+<body>
+<script src="common.js"></script>
+<script src="demo.js"></script>
+<script>
+const page = renderShell("activity", "Activity Log", "Every action in the system — permanent and tamper-proof (append-only)");
+const f = { user: "", kind: "", q: "", days: "30" };
+const qs = () => new URLSearchParams(Object.entries(f).filter(([, v]) => v)).toString();
+const KIND_GROUPS = { "": "All actions", "WO_": "Work orders", "AIRWORTHY": "Airworthiness", "TAKEOFF": "Takeoffs",
+  "LANDED": "Landings", "DEFECT": "Defect reports", "PREFLIGHT": "Pre-flight", "AI_": "AI assistant", "SEC_": "Security",
+  "SEC_LOGIN": "Sign-ins", "AIRCRAFT": "Fleet changes" };
+
+function bars(rows, key) {
+  const max = Math.max(...rows.map(r => r.count), 1);
+  return rows.slice(0, 8).map(r => `<div style="display:grid;grid-template-columns:130px 1fr 50px;gap:10px;align-items:center;margin:7px 0">
+    <span style="overflow:hidden;text-overflow:ellipsis">${esc(r[key])}</span>
+    <div class="bar" style="height:10px"><i style="width:${100 * r.count / max}%;background:var(--purple)"></i></div>
+    <b style="text-align:right">${r.count}</b></div>`).join("") || '<p class="empty">—</p>';
+}
+
+async function load() {
+  let d;
+  try { d = await api("/api/admin/activity?" + qs()); } catch (e) { page.innerHTML = `<div class="panel overdue">${esc(e.message)}</div>`; return; }
+  page.innerHTML = `
+  <div class="grid kpis">
+    <div class="kpi k-purple"><div class="ico">${icon("bolt")}</div><div><div class="n">${d.total_actions}</div><div class="l">Total actions (all time)</div></div></div>
+    <div class="kpi k-blue"><div class="ico">${icon("chart")}</div><div><div class="n">${d.today}</div><div class="l">Today</div></div></div>
+    <div class="kpi k-green"><div class="ico">${icon("list")}</div><div><div class="n">${d.matched}</div><div class="l">Matching filters</div></div></div>
+    <div class="kpi k-cyan"><div class="ico">${icon("ai")}</div><div><div class="n">${d.ai_questions}</div><div class="l">AI questions stored</div></div></div>
+  </div>
+  <div class="panel">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;align-items:end">
+      <div><label>User</label><select data-f="user"><option value="">Everyone</option>
+        ${d.by_user.map(u => `<option ${f.user === u.username ? "selected" : ""}>${esc(u.username)}</option>`).join("")}</select></div>
+      <div><label>Type</label><select data-f="kind">${Object.entries(KIND_GROUPS).map(([k, v]) =>
+        `<option value="${k}" ${f.kind === k ? "selected" : ""}>${v}</option>`).join("")}</select></div>
+      <div><label>Period</label><select data-f="days">${[["1", "Today"], ["7", "7 days"], ["30", "30 days"], ["365", "1 year"], ["3650", "All time"]]
+        .map(([v, l]) => `<option value="${v}" ${f.days === v ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+      <div><label>Search</label><input data-f="q" value="${esc(f.q)}" placeholder="aircraft, part, user…"></div>
+      <button class="btn gray" id="export">Export to Excel (CSV)</button>
+    </div>
+  </div>
+  <div class="grid row2">
+    <div class="panel"><h2>${icon("pilot")}Actions by user</h2>${bars(d.by_user, "username")}</div>
+    <div class="panel"><h2>${icon("chart")}Actions by type</h2>${bars(d.by_kind, "kind")}</div>
+  </div>
+  <div class="panel" style="overflow:auto"><h2>${icon("list")}Details (${d.events.length}${d.matched > d.events.length ? " of " + d.matched : ""})</h2>
+    <table><tr><th>Time</th><th>User</th><th>Type</th><th>Aircraft</th><th>Details</th></tr>
+    ${d.events.map(e => `<tr><td class="muted" style="white-space:nowrap">${fmtDateTime(e.created_at)}</td><td><b>${esc(e.username)}</b></td>
+      <td><span class="badge ${e.kind.startsWith("SEC_") ? (/FAILED|LOCKED|BLOCKED/.test(e.kind) ? "s-UNDER_MAINTENANCE" : "s-CLOSED") : e.kind.startsWith("AI_") ? "s-INSPECTION" : "s-OPEN"}">${esc(e.kind.replaceAll("_", " "))}</span></td>
+      <td>${esc(e.aircraft_id || "—")}</td><td>${esc(e.message)}</td></tr>`).join("") || '<tr><td colspan="5" class="empty">No actions match.</td></tr>'}
+    </table>
+    <p class="muted" style="font-size:12px">🔒 This log is append-only: the database refuses any change or deletion of past actions.</p></div>`;
+  page.querySelectorAll("[data-f]").forEach(el => el.addEventListener("change", () => { f[el.dataset.f] = el.value.trim(); load(); }));
+  document.getElementById("export").onclick = () => downloadCsv("/api/admin/activity.csv?" + qs(), "skysync-activity.csv");
+}
+if (page) { load(); connectLive(load); }
+</script>
+</body>
+</html>

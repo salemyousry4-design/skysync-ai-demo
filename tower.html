@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Control Tower — Sky Sync AI</title>
+<link rel="stylesheet" href="style.css">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="brand/logo.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="brand/logo.svg">
+<meta name="theme-color" content="#071226">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Sky Sync">
+</head>
+<body>
+<script src="common.js"></script>
+<script src="demo.js"></script>
+<script>
+const page = renderShell("tower", "Control Tower", "Flight line — clear takeoffs and record landings");
+
+async function load() {
+  await permsReady;
+  const allowed = can("flight.operate");
+  let fleet;
+  try { fleet = (await api("/api/fleet")).aircraft; } catch (e) { toast(e.message, "err"); return; }
+  page.innerHTML = (allowed ? "" : VIEW_ONLY("clear takeoffs or record landings (Tower Operator only)")) + `<div class="cards">${fleet.map(a => {
+    const ready = a.ops_status === "AVAILABLE" && !a.overdue;
+    return `<div class="card">
+      <div class="head"><span class="tail">${esc(a.aircraft_id)}</span>${badge(a.ops_status)}</div>
+      ${healthBar(a.health.score)}
+      <div class="meta"><div>Health: <b class="${healthClass(a.health.score)}">${a.health.score}%</b></div>
+        <div>Since maint.: <b>${a.hours_since_maintenance.toFixed(1)}h</b></div>
+        <div>Total hours: <b>${a.total_flight_hours.toFixed(0)}</b></div>
+        <div>Next due: <b class="${a.overdue ? "overdue" : ""}">${fmtDate(a.next_due_at)}</b></div></div>
+      ${a.overdue ? '<div class="overdue">⚠ Maintenance overdue — GROUNDED</div>' : ""}
+      <div class="btns">
+        ${a.ops_status === "AIRBORNE"
+          ? `<button class="btn" ${allowed ? "" : "disabled"} onclick="landing('${a.aircraft_id}')">Record Landing</button>`
+          : `<button class="btn green" ${ready && allowed ? "" : "disabled"} onclick="takeoff('${a.aircraft_id}')">Clear for Takeoff</button>`}
+        <button class="btn gray" onclick="showAircraft('${a.aircraft_id}')">Details</button>
+      </div></div>`;
+  }).join("")}</div>`;
+}
+
+async function takeoff(id) {
+  if (!confirm(`Clear ${id} for takeoff?`)) return;
+  await run(() => api(`/api/fleet/${id}/takeoff`, { method: "POST" })); load();
+}
+
+function landing(id) {
+  const m = modal(`<h3>Record landing — ${esc(id)}</h3>
+    <label>Flight hours</label><input id="hours" type="number" step="0.1" min="0.1" max="12" value="1.5">
+    <div style="display:flex;gap:10px;margin-top:16px"><button class="btn" id="ok">Record landing</button>
+    <button class="btn gray" onclick="closeModal()">Cancel</button></div>`);
+  m.querySelector("#ok").onclick = async () => {
+    const r = await run(() => api(`/api/fleet/${id}/land`, { method: "POST", body: { flight_hours: parseFloat(m.querySelector("#hours").value) } }));
+    if (r) { closeModal(); load(); }
+  };
+}
+if (page) { load(); connectLive(load); }
+</script>
+</body>
+</html>

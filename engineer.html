@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Workshop — Sky Sync AI</title>
+<link rel="stylesheet" href="style.css">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="brand/logo.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="brand/logo.svg">
+<meta name="theme-color" content="#071226">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Sky Sync">
+</head>
+<body>
+<script src="common.js"></script>
+<script src="demo.js"></script>
+<script>
+const page = renderShell("engineer", "Workshop", "Open work orders, record completed work");
+const TYPES = { INSPECTION: "Inspection", ROUTINE: "Routine check", REPAIR: "Repair", PART_REPLACEMENT: "Part replacement" };
+
+async function load() {
+  await permsReady;
+  const canOpen = can("workorders.create"), canComplete = can("workorders.complete");
+  let fleet, wos;
+  try {
+    [fleet, wos] = await Promise.all([api("/api/fleet"), api("/api/work-orders")]);
+    fleet = fleet.aircraft; wos = wos.work_orders.filter(w => w.status !== "CLOSED");
+  } catch (e) { toast(e.message, "err"); return; }
+  page.innerHTML = (canOpen ? "" : VIEW_ONLY("open or complete work orders (engineers only)")) + `
+  <div class="panel"><h2>${icon("wrench")}Active Work Orders</h2>
+    <div class="stack">${wos.length ? wos.map(w => `<div class="wo">
+      <div class="top"><b>${esc(w.aircraft_id)} — ${esc(w.title)}</b>${badge(w.status)}</div>
+      <div class="muted">${TYPES[w.type]}${w.part_name ? ` · Part: ${esc(w.part_name)}` : ""} · opened ${fmtDateTime(w.opened_at)} by ${esc(w.opened_by_name || "")}</div>
+      ${w.description ? `<div>${esc(w.description)}</div>` : ""}
+      ${w.signoff_notes && w.status === "OPEN" ? `<div class="overdue">Rejected: ${esc(w.signoff_notes)}</div>` : ""}
+      ${w.status === "OPEN" ? `<div><button class="btn green sm" ${canComplete ? "" : "disabled"} onclick="complete(${w.work_order_id})">Mark work done</button></div>`
+                            : '<div class="muted">Waiting for chief engineer sign-off</div>'}
+    </div>`).join("") : '<p class="empty">No active work orders.</p>'}</div></div>
+  <div class="panel"><h2>${icon("fleet")}Fleet</h2><div class="cards">${fleet.map(a => `<div class="card">
+      <div class="head"><span class="tail">${esc(a.aircraft_id)}</span>${badge(a.ops_status)}</div>
+      ${healthBar(a.health.score)}
+      <div class="meta"><div>Health: <b class="${healthClass(a.health.score)}">${a.health.score}%</b></div>
+        <div>Open orders: <b>${a.open_work_orders}</b></div></div>
+      <div class="btns"><button class="btn sm" ${a.ops_status === "AIRBORNE" || !canOpen ? "disabled" : ""} onclick="openWO('${a.aircraft_id}')">New work order</button>
+        <button class="btn sm gray" onclick="showAircraft('${a.aircraft_id}')">History</button></div>
+    </div>`).join("")}</div></div>`;
+}
+
+function openWO(id) {
+  const m = modal(`<h3>New work order — ${esc(id)}</h3>
+    <label>Type</label><select id="type">${Object.entries(TYPES).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}</select>
+    <label>Title</label><input id="title" placeholder="e.g. Tail rotor gearbox inspection">
+    <div id="partBox" style="display:none"><label>Part to replace</label><input id="part" placeholder="e.g. Fuel Control Unit"></div>
+    <label>Details</label><textarea id="desc" rows="3"></textarea>
+    <div style="display:flex;gap:10px;margin-top:16px"><button class="btn" id="ok">Open work order</button>
+    <button class="btn gray" onclick="closeModal()">Cancel</button></div>`);
+  const type = m.querySelector("#type");
+  type.onchange = () => m.querySelector("#partBox").style.display = type.value === "PART_REPLACEMENT" ? "" : "none";
+  m.querySelector("#ok").onclick = async () => {
+    const body = { type: type.value, title: m.querySelector("#title").value, description: m.querySelector("#desc").value,
+                   part_name: type.value === "PART_REPLACEMENT" ? m.querySelector("#part").value || null : null };
+    if (await run(() => api(`/api/fleet/${id}/work-orders`, { method: "POST", body }))) { closeModal(); load(); }
+  };
+}
+
+function complete(woId) {
+  const m = modal(`<h3>Work done</h3><label>What was done?</label>
+    <textarea id="notes" rows="4" placeholder="Findings, parts installed, tests performed"></textarea>
+    <div style="display:flex;gap:10px;margin-top:16px"><button class="btn green" id="ok">Submit for sign-off</button>
+    <button class="btn gray" onclick="closeModal()">Cancel</button></div>`);
+  m.querySelector("#ok").onclick = async () => {
+    if (await run(() => api(`/api/work-orders/${woId}/complete`, { method: "POST", body: { notes: m.querySelector("#notes").value } }))) { closeModal(); load(); }
+  };
+}
+if (page) { load(); connectLive(load); }
+</script>
+</body>
+</html>

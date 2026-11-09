@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en" class="login-page">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sky Sync AI</title>
+<link rel="stylesheet" href="style.css">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="brand/logo.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="brand/logo.svg">
+<meta name="theme-color" content="#071226">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Sky Sync">
+</head>
+<body>
+<div class="login-wrap">
+  <div class="login-emblem" id="emblem"></div>
+  <div class="panel login-card">
+    <div class="brand"><div><b>SKY SYNC AI</b><small>Fleet Readiness System</small></div></div>
+
+    <!-- step 1: username + password (+ 2FA code when required) -->
+    <form id="signin">
+      <label for="u">Username</label><input id="u" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" required>
+      <label for="p">Password</label><input id="p" type="password" autocomplete="current-password" required>
+      <div id="otpBox" style="display:none">
+        <label for="otp">6-digit code from your authenticator app</label>
+        <input id="otp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}"
+               style="letter-spacing:8px;font-size:22px;text-align:center">
+      </div>
+      <button class="btn" style="width:100%;margin-top:16px">Sign in</button>
+    </form>
+
+    <!-- step 2: choose a new password (first sign-in / after an admin reset) -->
+    <form id="change" style="display:none">
+      <p class="muted" style="margin-top:0">For security you must choose your own password before continuing.</p>
+      <label for="np">New password</label><input id="np" type="password" autocomplete="new-password" required>
+      <label for="np2">Repeat new password</label><input id="np2" type="password" autocomplete="new-password" required>
+      <p class="muted" style="font-size:12px">At least 12 characters with upper- and lowercase letters, a digit and a symbol.</p>
+      <button class="btn green" style="width:100%">Save password</button>
+    </form>
+
+    <!-- step 3: link your own phone (two-factor sign-in) — once per person -->
+    <div id="setup" style="display:none;text-align:center">
+      <p style="margin-top:0"><b>Link your phone</b> — one time only</p>
+      <p class="muted" style="font-size:13px;text-align:left">1. Install <b>Google Authenticator</b> or <b>Microsoft Authenticator</b> (they work without internet).<br>
+        2. In the app tap <b>+</b> and scan this code.<br>
+        3. Type the 6-digit code the app shows. It changes by itself every 30 seconds.</p>
+      <div id="qrBox" style="display:inline-block;background:#fff;border-radius:12px;padding:6px;min-height:120px"></div>
+      <p class="muted" style="font-size:11px">Can't scan? Key: <code id="key" style="user-select:all"></code></p>
+      <input id="first" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456"
+             style="letter-spacing:8px;font-size:22px;text-align:center">
+      <button class="btn green" id="confirm" style="width:100%;margin-top:12px">Activate</button>
+    </div>
+
+    <p id="err" class="overdue"></p>
+    <p class="muted" style="font-size:12px;text-align:center">🔒 Local network only — no internet connection</p>
+  </div>
+</div>
+<script src="common.js"></script>
+<script src="demo.js"></script>
+<script>
+document.getElementById("emblem").innerHTML =
+  `<img src="brand/logo.svg" alt="" onerror="this.parentElement.classList.add('no-logo');this.outerHTML=icon('shield')">`;
+const err = document.getElementById("err");
+const home = (user) => location.href = (ROLE_HOME[user.role] || "commander") + ".html";
+let pendingPassword = "";
+
+if (Session.token && Session.user && !location.search.includes("change") && !location.search.includes("setup2fa")) home(Session.user);
+if (location.search.includes("change") && Session.token) showChange();
+if (location.search.includes("setup2fa") && Session.token) showSetup();
+
+async function showSetup() {
+  for (const id of ["signin", "change"]) document.getElementById(id).style.display = "none";
+  document.getElementById("setup").style.display = "";
+  try {
+    const r = await api("/api/account/2fa/start", { method: "POST" });
+    qrBox.innerHTML = r.qr_svg.replace(/^<\?xml[^>]*>/, "");
+    key.textContent = r.secret;
+    first.focus();
+  } catch (ex) { err.textContent = ex.message; }
+}
+
+document.getElementById("confirm").onclick = async () => {
+  err.textContent = "";
+  try {
+    await api("/api/account/2fa/confirm", { method: "POST", body: { code: first.value.trim() } });
+    home(Session.user);
+  } catch (ex) { err.textContent = ex.message; }
+};
+
+function showChange() {
+  document.getElementById("signin").style.display = "none";
+  document.getElementById("change").style.display = "";
+  document.getElementById("np").focus();
+}
+
+document.getElementById("signin").onsubmit = async (e) => {
+  e.preventDefault(); err.textContent = "";
+  const body = { username: u.value.trim(), password: p.value };
+  if (otp.value) body.otp = otp.value.trim();
+  try {
+    const res = await fetch("/api/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const r = await res.json();
+    if (!res.ok) {
+      if (r.otp_required) { otpBox.style.display = ""; otp.value = ""; otp.focus(); }
+      err.textContent = r.message || "Sign-in failed";
+      return;
+    }
+    Session.save(r.session_token, r.user);
+    if (r.must_change_password) { pendingPassword = p.value; showChange(); return; }
+    if (r.two_factor_setup_required) { showSetup(); return; }
+    home(r.user);
+  } catch (ex) { err.textContent = "Cannot reach the server"; }
+};
+
+document.getElementById("change").onsubmit = async (e) => {
+  e.preventDefault(); err.textContent = "";
+  if (np.value !== np2.value) { err.textContent = "The two passwords do not match"; return; }
+  const current = pendingPassword || prompt("Current (temporary) password:") || "";
+  try {
+    await api("/api/account/password", { method: "POST", body: { current_password: current, new_password: np.value } });
+    // the change signs out every device: sign in again with the new password
+    const user = Session.user; Session.clear();
+    p.value = ""; otp.value = ""; u.value = user ? user.username : "";
+    document.getElementById("change").style.display = "none";
+    document.getElementById("signin").style.display = "";
+    err.style.color = "var(--green)"; err.textContent = "Password saved — sign in with your new password.";
+    setTimeout(() => err.style.color = "", 4000);
+  } catch (ex) { err.textContent = ex.message; }
+};
+</script>
+</body>
+</html>

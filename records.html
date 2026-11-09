@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Maintenance Records — Sky Sync AI</title>
+<link rel="stylesheet" href="style.css">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="brand/logo.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="brand/logo.svg">
+<meta name="theme-color" content="#071226">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Sky Sync">
+</head>
+<body>
+<script src="common.js"></script>
+<script src="demo.js"></script>
+<script>
+const page = renderShell("records", "Maintenance Records", "Complete maintenance logbook — every work order, who did it and who certified it");
+const TYPES = { INSPECTION: "Inspection", ROUTINE: "Routine", REPAIR: "Repair", PART_REPLACEMENT: "Part replacement" };
+const filters = { aircraft_id: "", status: "", type: "", q: "" };
+const query = () => new URLSearchParams(Object.entries(filters).filter(([, v]) => v)).toString();
+
+async function load() {
+  let records, fleet;
+  try { [records, fleet] = await Promise.all([api("/api/records?" + query()), api("/api/fleet")]); }
+  catch (e) { toast(e.message, "err"); return; }
+  records = records.records;
+  page.innerHTML = `
+  <div class="panel">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;align-items:end">
+      <div><label>Aircraft</label><select data-f="aircraft_id"><option value="">All aircraft</option>
+        ${fleet.aircraft.map(a => `<option ${filters.aircraft_id === a.aircraft_id ? "selected" : ""}>${esc(a.aircraft_id)}</option>`).join("")}</select></div>
+      <div><label>Type</label><select data-f="type"><option value="">All types</option>
+        ${Object.entries(TYPES).map(([k, v]) => `<option value="${k}" ${filters.type === k ? "selected" : ""}>${v}</option>`).join("")}</select></div>
+      <div><label>Status</label><select data-f="status"><option value="">All statuses</option>
+        ${["OPEN", "AWAITING_SIGNOFF", "CLOSED"].map(k => `<option value="${k}" ${filters.status === k ? "selected" : ""}>${STATUS_LABEL[k]}</option>`).join("")}</select></div>
+      <div><label>Search</label><input data-f="q" value="${esc(filters.q)}" placeholder="part, title, notes…"></div>
+      <button class="btn gray" id="export">Export to Excel (CSV)</button>
+    </div>
+  </div>
+  <div class="panel" style="overflow:auto"><h2>${icon("list")}${records.length} record(s)</h2>
+    <table><tr><th>Opened</th><th>Aircraft</th><th>Type</th><th>Work</th><th>Status</th><th>Engineer</th><th>Certified by</th></tr>
+    ${records.map(r => `<tr><td>${fmtDateTime(r.opened_at)}</td><td><b>${esc(r.aircraft_id)}</b></td><td>${TYPES[r.type]}</td>
+      <td>${esc(r.title)}${r.part_name ? ` <span class="muted">· ${esc(r.part_name)}</span>` : ""}
+        ${r.completion_notes ? `<div class="muted">✔ ${esc(r.completion_notes)}</div>` : ""}</td>
+      <td>${badge(r.status)}</td><td>${esc(r.completed_by_name || r.opened_by_name || "")}</td>
+      <td>${r.signed_by_name ? `${esc(r.signed_by_name)}<div class="muted">${fmtDateTime(r.signed_at)}</div>` : "—"}</td></tr>`).join("")
+      || '<tr><td colspan="7" class="empty">No records match these filters.</td></tr>'}
+    </table></div>`;
+  page.querySelectorAll("[data-f]").forEach(el => {
+    el.addEventListener(el.tagName === "INPUT" ? "change" : "input", () => { filters[el.dataset.f] = el.value.trim(); load(); });
+  });
+  document.getElementById("export").onclick = () => downloadCsv("/api/records.csv?" + query(), "skysync-maintenance-records.csv");
+}
+if (page) { load(); connectLive(load); }
+</script>
+</body>
+</html>

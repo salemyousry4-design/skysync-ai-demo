@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#071226"/><stop offset=".55" stop-color="#16305e"/>
+      <stop offset=".8" stop-color="#b4532a"/><stop offset="1" stop-color="#f59e0b"/>
+    </linearGradient>
+    <radialGradient id="sun" cx="1150" cy="760" r="420" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fcd34d" stop-opacity=".85"/><stop offset="1" stop-color="#f59e0b" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1600" height="900" fill="url(#sky)"/>
+  <circle cx="1150" cy="760" r="420" fill="url(#sun)"/>
+  <g fill="none" stroke="#22d3ee" stroke-opacity=".14" stroke-width="2">
+    <circle cx="1150" cy="760" r="160"/><circle cx="1150" cy="760" r="300"/><circle cx="1150" cy="760" r="440"/><circle cx="1150" cy="760" r="580"/>
+  </g>
+  <path d="M0 800 L240 760 420 790 640 740 860 785 1080 750 1320 790 1600 755 V900 H0Z" fill="#050d1c"/>
+  <g transform="translate(980 330) scale(5)" fill="#050d1c" stroke="#050d1c" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M-20 0h86" stroke-width="2.2" fill="none"/>
+    <path d="M23 0v7" stroke-width="3" fill="none"/>
+    <path d="M2 18c0-7 9-11 21-11s19 5 19 11-7 10-20 10S2 25 2 18z"/>
+    <path d="M40 15l34-5v-9l5 1-1 13-38 6z"/>
+    <path d="M10 33h30M15 27v6M33 27v6" stroke-width="2" fill="none"/>
+  </g>
+</svg>

@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Control Center — Sky Sync AI</title>
+<link rel="stylesheet" href="style.css">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="brand/logo.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="brand/logo.svg">
+<meta name="theme-color" content="#071226">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Sky Sync">
+</head>
+<body>
+<script src="common.js"></script>
+<script src="demo.js"></script>
+<script>
+const page = renderShell("control", "Control Center", "System owner — invisible to every other station");
+
+async function load() {
+  let d, info;
+  try { [d, info] = await Promise.all([api("/api/admin/overview"), api("/api/system/info")]); }
+  catch (e) { page.innerHTML = `<div class="panel"><p class="overdue">${esc(e.message)}</p></div>`; return; }
+  const others = d.online.filter(u => u.username !== Session.user.username);
+  page.innerHTML = `
+  <div class="grid row4">
+    <div class="panel"><h2>${icon("tower")}Stations Online Now (${others.length})</h2>
+      <table><tr><th>User</th><th>Role</th><th>Device IP</th></tr>
+      ${others.map(u => `<tr><td><b>${esc(u.username)}</b></td><td>${esc(u.role)}</td><td class="muted">${esc(u.ip || "-")}</td></tr>`).join("")
+        || '<tr><td colspan="3" class="empty">No other station connected.</td></tr>'}</table>
+      <p class="muted" style="font-size:13px">🕶 You are hidden: no other station sees you in its online list.</p></div>
+    <div class="panel"><h2>${icon("bolt")}System</h2>
+      <div class="facts" style="border:0;padding:0;display:flex;flex-direction:column;gap:8px;color:var(--muted)">
+        <div>iPads connect to: <b style="color:var(--text)">${esc(info.lan_url)}</b></div>
+        <div>Mode: <b style="color:var(--green)">Air-gapped — local network only</b></div>
+        <div><a href="#" id="qr" style="color:var(--cyan)">▸ Show QR code for phones & iPads</a></div>
+        <label style="display:flex;gap:10px;align-items:center;color:var(--text);margin:6px 0 0;font-size:14px">
+          <input type="checkbox" id="req2fa" style="width:auto" ${d.require_2fa ? "checked" : ""}>
+          Mandatory two-factor sign-in for everyone (each person links their own phone)</label></div>
+      <div class="actions" style="grid-template-columns:1fr 1fr;margin-top:14px">
+        <button class="btn" id="backup">${icon("shield")}Backup now</button>
+        <button class="btn purple" id="checks">${icon("bulb")}Run checks now</button></div></div>
+  </div>
+  <div class="panel" style="overflow:auto"><h2>${icon("pilot")}Users, Roles & Security</h2>
+    <table><tr><th>Username</th><th>Role</th><th>Status</th><th>2FA</th><th>Password</th><th>Actions</th></tr>
+    ${d.users.map(u => {
+      const me = u.username === Session.user.username, n = esc(u.username);
+      return `<tr><td><b>${n}</b></td><td>${esc(u.role)}</td>
+      <td>${u.locked ? '<span class="badge s-UNDER_MAINTENANCE">Locked</span>' : u.active ? '<span class="badge s-AVAILABLE">Active</span>' : '<span class="badge s-CLOSED">Disabled</span>'}</td>
+      <td>${u.two_factor ? '<span class="badge s-AVAILABLE">On</span>' : '<span class="muted">Off</span>'}</td>
+      <td>${u.must_change_password ? '<span class="badge s-AWAITING_SIGNOFF">Must change</span>' : '<span class="muted">OK</span>'}</td>
+      <td style="white-space:nowrap">
+        ${u.two_factor ? `<button class="btn sm purple" data-act="2fa-off" data-user="${n}" title="Lost or new phone: the user links a phone again at next sign-in">Reset 2FA (lost phone)</button>`
+          : d.require_2fa && (d.two_factor_exempt || []).includes(u.username) ? '<span class="badge s-AWAITING_SIGNOFF" title="Presentation demo: this account signs in without a phone">Demo — no 2FA</span>'
+          : d.require_2fa ? '<span class="muted" style="font-size:12px">links phone at sign-in</span>'
+          : `<button class="btn sm purple" data-act="2fa" data-user="${n}" data-on="false">Enable 2FA</button>`}
+        <button class="btn sm gray" data-act="reset" data-user="${n}">Reset password</button>
+        ${u.locked ? `<button class="btn sm green" data-act="unlock" data-user="${n}">Unlock</button>` : ""}
+        ${me ? "" : `<button class="btn sm ${u.active ? "red" : "green"}" data-act="status" data-user="${n}" data-active="${!u.active}">${u.active ? "Disable" : "Enable"}</button>`}
+      </td></tr>`; }).join("")}
+    </table>
+    <h3 style="margin-top:18px">Add user</h3>
+    <form id="add" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;align-items:end">
+      <div><label>Username</label><input id="nu" required></div>
+      <div><label>Initial password (12+, upper/lower/digit/symbol)</label><input id="np" type="password" minlength="12" required></div>
+      <div><label>Role</label><select id="nr">${d.roles.map(r => `<option>${esc(r)}</option>`).join("")}</select></div>
+      <button class="btn green">Add user</button></form>
+    <p class="muted" style="font-size:12px">New users must choose their own password at first sign-in.</p></div>
+  <div class="panel" style="overflow:auto"><h2>${icon("shield")}Security Log</h2>
+    <table><tr><th>Time</th><th>Event</th><th>Details</th></tr>
+    ${d.security_log.map(e => `<tr><td class="muted" style="white-space:nowrap">${fmtDateTime(e.created_at)}</td>
+      <td><span class="badge ${/FAILED|LOCKED|BLOCKED|DISABLED/.test(e.kind) ? "s-UNDER_MAINTENANCE" : "s-CLOSED"}">${esc(e.kind.replace("SEC_", "").replaceAll("_", " "))}</span></td>
+      <td>${esc(e.message)}</td></tr>`).join("") || '<tr><td colspan="3" class="empty">No security events yet.</td></tr>'}
+    </table></div>`;
+
+  document.getElementById("req2fa").onchange = async (e) => {
+    if (e.target.checked && !confirm("Everyone — including you — will link their own phone at their next action. Continue?")) {
+      e.target.checked = false; return;
+    }
+    await run(() => api("/api/admin/policy", { method: "PUT", body: { require_2fa: e.target.checked } })); load();
+  };
+  document.getElementById("qr").onclick = (e) => { e.preventDefault(); showPhoneQr(info.lan_url); };
+  document.getElementById("backup").onclick = () => run(() => api("/api/admin/backup", { method: "POST" }));
+  document.getElementById("checks").onclick = () => run(() => api("/api/admin/automation/run", { method: "POST" }));
+  page.querySelectorAll("button[data-act]").forEach(b => b.onclick = () => userAction(b.dataset.act, b.dataset.user, b.dataset));
+  document.getElementById("add").onsubmit = async (e) => {
+    e.preventDefault();
+    const body = { username: nu.value.trim(), password: np.value, role: nr.value };
+    if (await run(() => api("/api/admin/users", { method: "POST", body }))) load();
+  };
+}
+async function userAction(act, user, data) {
+  const path = `/api/admin/users/${encodeURIComponent(user)}`;
+  if (act === "status") {
+    await run(() => api(`${path}/status`, { method: "PUT", body: { active: data.active === "true" } }));
+  } else if (act === "unlock") {
+    await run(() => api(`${path}/unlock`, { method: "POST" }));
+  } else if (act === "2fa-off") {
+    if (!confirm(`Reset two-factor sign-in for ${user}? Their old phone stops working; they link a new one at next sign-in.`)) return;
+    await run(() => api(`${path}/2fa`, { method: "DELETE" }));
+  } else if (act === "2fa") {
+    if (data.on === "true" && !confirm(`Issue a NEW 2FA code for ${user}? The old one stops working.`)) return;
+    try {
+      const r = await api(`${path}/2fa`, { method: "POST" });
+      modal(`<div style="text-align:center"><h3 style="margin-top:0">Two-factor sign-in for ${esc(user)}</h3>
+        <div style="display:inline-block;background:#fff;border-radius:12px;padding:6px">${r.qr_svg.replace(/^<\?xml[^>]*>/, "")}</div>
+        <p class="muted">${esc(user)} scans this with an authenticator app (Google / Microsoft Authenticator —
+          they work offline). From now on sign-in needs the password <b>and</b> the 6-digit code that changes every 30 seconds.</p>
+        <p class="muted" style="font-size:12px">Manual key: <code style="user-select:all">${esc(r.secret)}</code></p>
+        <p class="overdue" style="font-size:13px">Shown only once — close this window when it has been scanned.</p>
+        <button class="btn gray" onclick="closeModal()">Done</button></div>`);
+    } catch (e) { toast(e.message, "err"); }
+  } else if (act === "reset") {
+    if (!confirm(`Reset the password of ${user}? They will be signed out everywhere.`)) return;
+    try {
+      const r = await api(`${path}/reset-password`, { method: "POST" });
+      modal(`<div style="text-align:center"><h3 style="margin-top:0">Temporary password for ${esc(user)}</h3>
+        <p style="font-size:24px;letter-spacing:2px"><code style="user-select:all">${esc(r.temporary_password)}</code></p>
+        <p class="muted">Give it to ${esc(user)} in person. They must choose a new password when they sign in.</p>
+        <p class="overdue" style="font-size:13px">Shown only once.</p>
+        <button class="btn gray" onclick="closeModal()">Done</button></div>`);
+    } catch (e) { toast(e.message, "err"); }
+  }
+  load();
+}
+if (page) { load(); connectLive(() => {}); }
+</script>
+</body>
+</html>

@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>AI Assistant — Sky Sync AI</title>
+<link rel="stylesheet" href="style.css">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="brand/logo.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="brand/logo.svg">
+<meta name="theme-color" content="#071226">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Sky Sync">
+</head>
+<body>
+<script src="common.js"></script>
+<script src="demo.js"></script>
+<script>
+const page = renderShell("assistant", "AI Maintenance Assistant", "Answers from the squadron's maintenance library and live fleet data — fully offline");
+
+const EXAMPLES = ["TGB chip light after landing — what do I do?", "What is wrong with SK-103 and how do we fix it?",
+                  "Main rotor bounce after blade replacement", "Hydraulic fitting leak limits"];
+
+if (page) {
+  page.innerHTML = `
+  <div class="panel">
+    <div class="chat" id="chat"><div class="msg ai">Ask me about a maintenance problem or an aircraft (e.g. SK-105).
+I answer only from the maintenance library and live fleet data, and I always show my sources.</div></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin:12px 0">${EXAMPLES.map(e => `<button class="btn-ghost ex">${esc(e)}</button>`).join("")}</div>
+    <form id="form" style="display:flex;gap:10px"><input id="q" placeholder="Type your question…" autocomplete="off">
+      <button class="btn">Ask</button></form>
+    <p class="muted" id="status" style="font-size:12px;margin-bottom:0"></p>
+  </div>`;
+  const chat = document.getElementById("chat"), q = document.getElementById("q");
+  const add = (cls, html) => { const d = document.createElement("div"); d.className = "msg " + cls; d.innerHTML = html; chat.appendChild(d); chat.scrollTop = chat.scrollHeight; return d; };
+  async function send(text) {
+    if (!text.trim()) return;
+    add("me", esc(text)); q.value = "";
+    const pending = add("ai", '<span class="muted">Searching the maintenance library…</span>');
+    try {
+      const r = await api("/api/assistant/ask", { method: "POST", body: { question: text } });
+      pending.innerHTML = esc(r.answer) + (r.sources.length ? `<div class="src">Sources: ${r.sources.map(s =>
+        `<span title="${esc(s.text)}">[${s.n}] ${esc(s.title)} — ${esc(s.section)}</span>`).join("")}</div>` : "") +
+        `<div class="src">Mode: ${esc(r.mode)}</div>`;
+    } catch (e) { pending.innerHTML = `<span class="overdue">${esc(e.message)}</span>`; }
+    chat.scrollTop = chat.scrollHeight;
+  }
+  document.getElementById("form").onsubmit = (e) => { e.preventDefault(); send(q.value); };
+  document.querySelectorAll(".ex").forEach(b => b.onclick = () => send(b.textContent));
+  // permanent memory: show this user's previous questions
+  api("/api/assistant/history?limit=10").then(h => {
+    if (!h.history.length) return;
+    const box = document.createElement("div");
+    box.className = "panel";
+    box.innerHTML = `<h2>${icon("list")}Your previous questions</h2>` + h.history.map(x =>
+      `<details style="margin:6px 0"><summary style="cursor:pointer">${esc(x.question)} <span class="muted">· ${fmtDateTime(x.created_at)}</span></summary>
+       <div class="msg ai" style="max-width:100%;margin-top:6px">${esc(x.answer)}</div></details>`).join("");
+    page.appendChild(box);
+  }).catch(() => {});
+  api("/api/assistant/status").then(s => document.getElementById("status").textContent =
+    `Library: ${s.documents} documents, ${s.chunks} chunks · Local model: ${s.llm_model}`).catch(() => {});
+  connectLive(() => {});
+}
+</script>
+</body>
+</html>

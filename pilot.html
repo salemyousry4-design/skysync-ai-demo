@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pilot Briefing — Sky Sync AI</title>
+<link rel="stylesheet" href="style.css">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="brand/logo.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="brand/logo.svg">
+<meta name="theme-color" content="#071226">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Sky Sync">
+</head>
+<body>
+<script src="common.js"></script>
+<script src="demo.js"></script>
+<script>
+const page = renderShell("pilot", "Pilot Briefing", "Review your aircraft before leaving the squadron");
+let selected = null;
+
+async function load() {
+  await permsReady;
+  const canAck = can("preflight.acknowledge"), canReport = can("defects.report");
+  let fleet;
+  try { fleet = (await api("/api/fleet")).aircraft; } catch (e) { toast(e.message, "err"); return; }
+  // A pilot can open ANY aircraft; start on the first one that is ready to fly
+  const firstReady = fleet.find(f => f.ops_status === "AVAILABLE" && !f.overdue) || fleet[0];
+  selected = selected || firstReady?.aircraft_id;
+  let a;
+  try { a = await api(`/api/fleet/${encodeURIComponent(selected)}`); } catch (e) { toast(e.message, "err"); return; }
+  const ready = a.ops_status === "AVAILABLE" && !a.overdue;
+  const recent = a.work_orders.slice(0, 5);
+  page.innerHTML = (canAck ? "" : VIEW_ONLY("acknowledge pre-flight or report defects (pilots only)")) + `
+  <div class="panel"><label>Aircraft</label>
+    <select id="pick">${fleet.map(f => `<option value="${f.aircraft_id}" ${f.aircraft_id === selected ? "selected" : ""}>
+      ${f.aircraft_id} — ${STATUS_LABEL[f.ops_status]} — health ${f.health.score}%</option>`).join("")}</select></div>
+  <div class="panel">
+    <div class="insight">
+      <div class="big" style="background:${ready ? "#14532d" : "#7c2d12"};color:${ready ? "var(--green)" : "var(--orange)"}">${icon(ready ? "check" : "wrench")}</div>
+      <div style="flex:1"><h3 style="color:${ready ? "var(--green)" : "var(--orange)"}">${ready ? "Ready for flight" : "NOT ready for flight"}</h3>
+        <div>${badge(a.ops_status)} Health <b class="${healthClass(a.health.score)}">${a.health.score}%</b> · Risk <b>${a.health.risk}</b></div>
+        ${a.health.reasons.length ? `<ul class="reasons">${a.health.reasons.map(r => `<li>${esc(r)}</li>`).join("")}</ul>` : ""}</div>
+      <div class="facts"><div>Since maintenance: <b>${a.hours_since_maintenance.toFixed(1)}h</b></div>
+        <div>Last maintenance: <b>${fmtDate(a.last_maintenance_at)}</b></div>
+        <div>Next due: <b class="${a.overdue ? "overdue" : ""}">${fmtDate(a.next_due_at)}</b></div></div>
+    </div>
+    <div class="btns" style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">
+      <button class="btn green" ${ready && canAck ? "" : "disabled"} onclick="ack()">I reviewed this aircraft</button>
+      <button class="btn red" ${a.ops_status === "AIRBORNE" || !canReport ? "disabled" : ""} onclick="defect()">Report a defect</button>
+    </div></div>
+  <div class="panel"><h2>${icon("wrench")}What was done on this aircraft</h2>
+    <div class="stack">${recent.map(w => `<div class="wo"><div class="top"><b>${esc(w.title)}</b>${badge(w.status)}</div>
+      <div class="muted">${esc(w.type)}${w.part_name ? ` · ${esc(w.part_name)}` : ""} · ${fmtDate(w.opened_at)}</div>
+      ${w.completion_notes ? `<div>✔ ${esc(w.completion_notes)}</div>` : ""}
+      ${w.signed_by_name ? `<div class="muted">Certified by ${esc(w.signed_by_name)} ${fmtDateTime(w.signed_at)}</div>` : ""}</div>`).join("") || '<p class="empty">No work recorded.</p>'}</div></div>`;
+  document.getElementById("pick").onchange = (e) => { selected = e.target.value; load(); };
+}
+
+async function ack() { await run(() => api(`/api/fleet/${selected}/preflight-ack`, { method: "POST" })); load(); }
+
+function defect() {
+  const m = modal(`<h3>Report a defect — ${esc(selected)}</h3><label>Describe what you noticed</label>
+    <textarea id="desc" rows="4" placeholder="e.g. Unusual vibration in tail rotor during hover"></textarea>
+    <p class="muted">The aircraft will go into inspection and the workshop is notified immediately.</p>
+    <div style="display:flex;gap:10px"><button class="btn red" id="ok">Report</button><button class="btn gray" onclick="closeModal()">Cancel</button></div>`);
+  m.querySelector("#ok").onclick = async () => {
+    if (await run(() => api(`/api/fleet/${selected}/defects`, { method: "POST", body: { description: m.querySelector("#desc").value } }))) { closeModal(); load(); }
+  };
+}
+if (page) { load(); connectLive(load); }
+</script>
+</body>
+</html>

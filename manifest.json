@@ -1,0 +1,12 @@
+{
+  "name": "Sky Sync AI — Demo",
+  "short_name": "Sky Sync",
+  "description": "Fleet readiness system — online demo with sample data",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#071226",
+  "theme_color": "#071226",
+  "icons": [{ "src": "brand/logo.svg", "sizes": "any", "type": "image/svg+xml" }]
+}

@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Chief Engineer — Sky Sync AI</title>
+<link rel="stylesheet" href="style.css">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="brand/logo.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="brand/logo.svg">
+<meta name="theme-color" content="#071226">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Sky Sync">
+</head>
+<body>
+<script src="common.js"></script>
+<script src="demo.js"></script>
+<script>
+const page = renderShell("chief", "Chief Engineer", "Review completed work and certify aircraft airworthy");
+
+async function load() {
+  await permsReady;
+  const canSign = can("workorders.signoff");
+  let waiting, open, fleet;
+  try {
+    [waiting, open, fleet] = await Promise.all([api("/api/work-orders?status=AWAITING_SIGNOFF"),
+      api("/api/work-orders?status=OPEN"), api("/api/fleet")]);
+  } catch (e) { toast(e.message, "err"); return; }
+  page.innerHTML = (canSign ? "" : VIEW_ONLY("certify aircraft airworthy (Chief Engineer only)")) + `
+  <div class="panel"><h2>${icon("check")}Awaiting Your Sign-off (${waiting.work_orders.length})</h2>
+    <div class="stack">${waiting.work_orders.map(w => `<div class="wo">
+      <div class="top"><b>${esc(w.aircraft_id)} — ${esc(w.title)}</b>${badge(w.status)}</div>
+      <div class="muted">${esc(w.type)}${w.part_name ? ` · Part: ${esc(w.part_name)}` : ""} · done by ${esc(w.completed_by_name || "")} ${fmtDateTime(w.completed_at)}</div>
+      <div>✔ ${esc(w.completion_notes)}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn green sm" ${canSign ? "" : "disabled"} onclick="decide(${w.work_order_id}, true)">Certify airworthy</button>
+        <button class="btn red sm" ${canSign ? "" : "disabled"} onclick="decide(${w.work_order_id}, false)">Reject — rework</button>
+        <button class="btn gray sm" onclick="showAircraft('${esc(w.aircraft_id)}')">Aircraft history</button></div>
+    </div>`).join("") || '<p class="empty">Nothing waiting for sign-off.</p>'}</div></div>
+  <div class="grid row4">
+    <div class="panel"><h2>${icon("wrench")}Work in Progress (${open.work_orders.length})</h2>
+      <table><tr><th>Aircraft</th><th>Work</th><th>Opened</th></tr>
+      ${open.work_orders.map(w => `<tr><td><b>${esc(w.aircraft_id)}</b></td><td>${esc(w.title)}</td><td>${fmtDateTime(w.opened_at)}</td></tr>`).join("") || '<tr><td colspan="3" class="empty">None</td></tr>'}</table></div>
+    <div class="panel"><h2>${icon("fleet")}Fleet Health</h2>
+      <table>${fleet.aircraft.map(a => `<tr><td><b>${esc(a.aircraft_id)}</b></td><td>${badge(a.ops_status)}</td>
+        <td class="${healthClass(a.health.score)}">${a.health.score}%</td></tr>`).join("")}</table></div>
+  </div>`;
+}
+
+function decide(woId, approve) {
+  const m = modal(`<h3>${approve ? "Certify airworthy" : "Reject — send back for rework"}</h3>
+    <label>${approve ? "Notes (optional)" : "Reason"}</label><textarea id="notes" rows="3"></textarea>
+    <div style="display:flex;gap:10px;margin-top:16px"><button class="btn ${approve ? "green" : "red"}" id="ok">Confirm</button>
+    <button class="btn gray" onclick="closeModal()">Cancel</button></div>`);
+  m.querySelector("#ok").onclick = async () => {
+    const body = { approve, notes: m.querySelector("#notes").value };
+    if (await run(() => api(`/api/work-orders/${woId}/sign-off`, { method: "POST", body }))) { closeModal(); load(); }
+  };
+}
+if (page) { load(); connectLive(load); }
+</script>
+</body>
+</html>

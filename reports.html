@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Analytics & Reports — Sky Sync AI</title>
+<link rel="stylesheet" href="style.css">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="brand/logo.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="brand/logo.svg">
+<meta name="theme-color" content="#071226">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Sky Sync">
+</head>
+<body>
+<script src="common.js"></script>
+<script src="demo.js"></script>
+<script>
+const page = renderShell("reports", "Analytics & Reports", "Availability, flying hours and maintenance performance per aircraft");
+let days = 30;
+
+function bars(rows, key, unit, max) {
+  return rows.map(r => {
+    const v = r[key] ?? 0, w = max ? Math.max(2, 100 * v / max) : 0;
+    return `<div style="display:grid;grid-template-columns:96px 1fr 64px;gap:10px;align-items:center;margin:9px 0">
+      <b>${esc(r.aircraft_id)}</b><div class="bar" style="height:12px"><i style="width:${w}%;background:var(--blue)"></i></div>
+      <span style="text-align:right">${v}${unit}</span></div>`;
+  }).join("");
+}
+
+async function load() {
+  let r;
+  try { r = await api(`/api/reports/fleet?days=${days}`); } catch (e) { toast(e.message, "err"); return; }
+  const t = r.totals, rows = r.aircraft;
+  page.innerHTML = `
+  <div class="panel" style="display:flex;gap:12px;align-items:end;flex-wrap:wrap">
+    <div style="min-width:180px"><label>Period</label><select id="days">
+      ${[7, 30, 90].map(d => `<option value="${d}" ${d === days ? "selected" : ""}>Last ${d} days</option>`).join("")}</select></div>
+    <button class="btn gray" id="export">Export to Excel (CSV)</button>
+    <span class="muted" style="margin-left:auto;font-size:13px">Generated ${fmtDateTime(r.generated_at)}</span>
+  </div>
+  <div class="grid kpis">
+    <div class="kpi k-green"><div class="ico">${icon("check")}</div><div><div class="n">${t.availability_pct}%</div><div class="l">Fleet availability</div></div></div>
+    <div class="kpi k-cyan"><div class="ico">${icon("tower")}</div><div><div class="n">${t.flight_hours}</div><div class="l">Flight hours</div></div></div>
+    <div class="kpi k-blue"><div class="ico">${icon("fleet")}</div><div><div class="n">${t.sorties}</div><div class="l">Sorties</div></div></div>
+    <div class="kpi k-orange"><div class="ico">${icon("wrench")}</div><div><div class="n">${t.work_orders}</div><div class="l">Work orders</div></div></div>
+    <div class="kpi k-purple"><div class="ico">${icon("bolt")}</div><div><div class="n">${t.defects}</div><div class="l">Defects</div></div></div>
+  </div>
+  <div class="grid row2">
+    <div class="panel"><h2>${icon("check")}Availability per aircraft</h2>${bars(rows, "availability_pct", "%", 100)}</div>
+    <div class="panel"><h2>${icon("tower")}Flight hours per aircraft</h2>${bars(rows, "flight_hours", "h", Math.max(...rows.map(x => x.flight_hours), 1))}</div>
+  </div>
+  <div class="panel" style="overflow:auto"><h2>${icon("chart")}Aircraft summary</h2>
+    <table><tr><th>Aircraft</th><th>Status</th><th>Health</th><th>Availability</th><th>Sorties</th><th>Flight hours</th>
+      <th>Work orders</th><th>Defects</th><th>Avg. turnaround</th></tr>
+    ${rows.map(a => `<tr><td><b>${esc(a.aircraft_id)}</b></td><td>${badge(a.status)}</td>
+      <td class="${healthClass(a.health)}">${a.health}%</td><td>${a.availability_pct}%</td><td>${a.sorties}</td>
+      <td>${a.flight_hours}h</td><td>${a.work_orders}</td><td>${a.defects}</td>
+      <td>${a.avg_turnaround_h === null ? "—" : a.avg_turnaround_h + "h"}</td></tr>`).join("")}</table>
+    <p class="muted" style="font-size:12px">Availability = share of the period with no open work order. Turnaround = hours from opening a work order to its sign-off.</p></div>`;
+  document.getElementById("days").onchange = (e) => { days = +e.target.value; load(); };
+  document.getElementById("export").onclick = () => downloadCsv(`/api/reports/fleet.csv?days=${days}`, `skysync-fleet-report-${days}d.csv`);
+}
+if (page) { load(); connectLive(load); }
+</script>
+</body>
+</html>

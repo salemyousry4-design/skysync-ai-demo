@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Aircraft Management — Sky Sync AI</title>
+<link rel="stylesheet" href="style.css">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="brand/logo.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="brand/logo.svg">
+<meta name="theme-color" content="#071226">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Sky Sync">
+</head>
+<body>
+<script src="common.js"></script>
+<script src="demo.js"></script>
+<script>
+const page = renderShell("fleet", "Aircraft Management", "Fleet register and tracked components");
+
+async function load() {
+  let fleet;
+  try { fleet = (await api("/api/fleet")).aircraft; } catch (e) { toast(e.message, "err"); return; }
+  page.innerHTML = `
+  <div class="panel" style="overflow:auto"><h2>${icon("fleet")}Fleet register (${fleet.length})</h2>
+    <table><tr><th>Aircraft</th><th>Model</th><th>Status</th><th>Health</th><th>Total hours</th><th>Since maint.</th>
+      <th>Last maintenance</th><th>Next due</th><th></th></tr>
+    ${fleet.map(a => `<tr><td><b>${esc(a.aircraft_id)}</b></td><td>${esc(a.model)}</td><td>${badge(a.ops_status)}</td>
+      <td class="${healthClass(a.health.score)}">${a.health.score}%</td><td>${a.total_flight_hours.toFixed(1)}</td>
+      <td>${a.hours_since_maintenance.toFixed(1)}h</td><td>${fmtDate(a.last_maintenance_at)}</td>
+      <td class="${a.overdue ? "overdue" : ""}">${fmtDate(a.next_due_at)}</td>
+      <td style="white-space:nowrap"><button class="btn sm gray" onclick="components('${esc(a.aircraft_id)}')">Components</button>
+        <button class="btn sm gray" onclick="showAircraft('${esc(a.aircraft_id)}')">History</button></td></tr>`).join("")}
+    </table></div>
+  <div class="panel"><h2>${icon("bolt")}Add aircraft</h2>
+    <form id="add" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;align-items:end">
+      <div><label>Aircraft ID</label><input id="aid" placeholder="SK-107" required></div>
+      <div><label>Model</label><input id="model" value="AH-64D" required></div>
+      <div><label>Notes</label><input id="notes" placeholder="optional"></div>
+      <button class="btn green">Add to fleet</button></form>
+    <p class="muted" style="font-size:12px">The new aircraft appears on every station immediately, with its first inspection due in 30 days.</p></div>`;
+  document.getElementById("add").onsubmit = async (e) => {
+    e.preventDefault();
+    const body = { aircraft_id: aid.value.trim().toUpperCase(), model: model.value.trim(), notes: notes.value.trim() };
+    if (await run(() => api("/api/fleet", { method: "POST", body }))) load();
+  };
+}
+
+async function components(id) {
+  const m = modal(`<p class="muted">Loading components…</p>`);
+  try {
+    const d = await api(`/api/components/aircraft/${encodeURIComponent(id)}`);
+    m.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center">
+      <h3 style="margin:0">${esc(id)} — tracked components</h3><button class="btn-ghost" onclick="closeModal()">Close</button></div>
+      <table style="margin-top:12px"><tr><th>Component</th><th>ID</th><th>Notes</th></tr>
+      ${d.components.map(c => `<tr><td><b>${esc(c.component_name)}</b></td><td class="muted">${esc(c.component_id)}</td>
+        <td class="muted">${esc(c.notes || "")}</td></tr>`).join("") || '<tr><td colspan="3" class="empty">No components recorded.</td></tr>'}</table>`;
+  } catch (e) { m.innerHTML = `<p class="overdue">${esc(e.message)}</p><button class="btn gray" onclick="closeModal()">Close</button>`; }
+}
+if (page) { load(); connectLive(load); }
+</script>
+</body>
+</html>
